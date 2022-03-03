@@ -1,46 +1,79 @@
-Reporting example:
+# Overview
+Tool is used for submitting violation reports about spam, fake, pornography, child abuse
+messages posted in the telegram channel.
 
-1. Prepare csv file for reporting telegram messages as spam, violence, etc   
-Create file report_channel_name.csv with following content
+Each violation report could contain information about multiple telegram channels.
+Such structure allows us to submit numerous violations.
 
+Report has a csv structure and represented by following data:
+Columns: type of report, description, channel name, message id from the link 
 ```
-spam,Markerting advertisment,online-market,10,11
-fake,Photoshop,maps,12
+spam,Fake news,end_of_world,10,12
+violence,Supporting terrorism,army_of_mordor,2101
+fake,Fake news,end_of_world,2103
 ```
 
-Legend info: 
--   type of report - unrelated, custom, childAbuse, fake, spam, violence, copyright, pornography 
--   description - general information about content
--   channel name - telegram channel name
--   message link id - Choose message and click on button `Copy Message Link`. Extract id of channel,message from url and add to the file
+Legend info:
+-   type of report: unrelated, custom, childAbuse, fake, spam, violence, copyright, pornography
+-   description: general information about inappropriate content
+-   channel name: telegram`s channel name
+-   message id - message offset in telegram channel
 
-Example:
-Link: https://t.me/onlineshop/102
-<- Parsed data ->
-Channel name: onlineshop
-Message if: 102
+**How to get following information:**
 
-<-Result->
-spam,Advertisement,onlineshop,102
+Choose inappropriate message and click on button `Copy Message Link`. 
+Extract id of channel,message from url and add to the file
 
- 2. Build Java bindings for example - https://tdlib.github.io/td/build.html?language=Java
+For example: link https://t.me/end_of_world/10
+Channel name: end_of_world
+Message Id: 10
 
-- Choose a programming language - Java
-- Choose an operating system (installed OS on your computer)
-- Execute steps in the documentation
+# 1. Prerequisites
 
- 3. During first execution of library, it will ask phone number and verification code for obtaining access token from telegram.
+1. Install [Docker Desktop](https://docs.docker.com/desktop/windows/install/)
+2. Create folder for storing reports. For instance: `/Users/plm/reports`
 
-<img width="515" alt="Screenshot 2022-03-02 at 11 27 19" src="https://user-images.githubusercontent.com/14370349/156362523-2e94ba30-8b0f-4d04-b656-5d812b2fdc47.png">
+# 2. Build tb_reporter container
 
+## 2.1.1 Using local image
 
-Example: 
-cd $HOME/td/tdlib/bin
-/usr/local/opt/openjdk/libexec/openjdk.jdk/Contents/Home/bin/java '-Djava.library.path=.' org/drinkless/tdlib/example/Example
+1. Change Docker Desktop setting: Prefferences -> Resources -> Advance
 
- 4. Resolve human readable telegram data as telegram ids via cli command . Command will create a new file in the same directory with preffix `resolved_....`
- 
- resolveIds ~/report_channel_name.csv  
- 
- 5. Report telegram messages for resolved telegram data ~/report_channel_name.resolved.csv
-report ~/resolved_report_channel_name.csv
+        CPUs: 4
+        Memory: 4GB
+
+2. Build docker image
+
+        docker build . --tag plm34869/tg_reporter:latest
+
+## 2.1.2 Using image from hub.docker.com
+
+1. Pull plm34869/tg_reporter:latest from hub.docker.com
+
+      docker pull plm34869/tg_reporter:latest
+
+## 2.2 Create container `tg_reporter` with launched mounted report folder from local machine
+
+      #replace /Users/plm/reports by your local folder 
+      docker create --name tg_reporter -it --mount src=/Users/plm/reports,target=/.td_app/tdlib/bin/reports,type=bind plm34869/tg_reporter:latest
+
+## 2.3 Launch application & make firs login.
+
+      docker start -ia tg_reporter
+You will need to enter phone number and verification code from telegram message for obtaining access.
+
+# 3. Prepare reports.
+- Open telegram channel. For instance: https://t.me/end_of_world
+- Find all inappropriate messages and put them into file `report_end_of_world.csv`
+- Resolve ids for messages, because offsets could be changed in the channel.
+  As a result you will get a file `resolved_report_end_of_world.csv`
+   
+      docker start -ia tg_reporter
+      resolveIds /.td_app/tdlib/bin/reports/report_end_of_world.csv
+      q
+- Share `resolved_report_end_of_world.csv` file with other people and ask them to submit report.
+  `resolved_report_end_of_world.csv` could be found in your local folder for reports.
+- Submit `resolved_report_end_of_world.csv` report.
+
+      docker start -ia tg_reporter
+      report /.td_app/tdlib/bin/reports/resolved_report_end_of_world.csv
