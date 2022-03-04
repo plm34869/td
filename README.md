@@ -125,4 +125,4 @@ You will need to enter phone number and verification code from telegram message 
 - Submit `resolved_report_end_of_world.csv` report.
 
       docker start -ia tg_reporter
-      report /.td_app/tdlib/bin/reports/resolved_report_end_of_world.csv
+      reportMessages /.td_app/tdlib/bin/reports/resolved_report_end_of_world.csv
