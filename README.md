@@ -3,14 +3,19 @@ Tool is used for submitting violation reports about spam, fake, pornography, chi
 messages posted in the telegram channel.
 
 Each violation report could contain information about multiple telegram channels.
-Such structure allows us to submit numerous violations.
+Such structure allows us to submit numerous violations very quickly.
 
-Report has a csv structure and represented by following data:
+**Tool have 2 options** for submitting reports:
+- submit report per telegram message (use action `reportMessages`)
+- submit report per telegram message (use action `reportChannels`)
+
+
+**Message report** has a semi-csv structure and represented by following data.<br>
 Columns: type of report, description, channel name, message id from the link 
 ```
-spam,Fake news,end_of_world,10,12
-violence,Supporting terrorism,army_of_mordor,2101
-fake,Fake news,end_of_world,2103
+spam;Fake news;end_of_world;10;12
+violence;Supporting terrorism;army_of_mordor;2101
+fake;Fake news;end_of_world;2103
 ```
 
 Legend info:
@@ -19,14 +24,58 @@ Legend info:
 -   channel name: telegram`s channel name
 -   message id - message offset in telegram channel
 
-**How to get following information:**
+**Channel report** has a semi-csv structure and represented by following data.<br>
+Columns: description, channel name
 
-Choose inappropriate message and click on button `Copy Message Link`. 
-Extract id of channel,message from url and add to the file
+```
+Fake news;end_of_world
+Supporting terrorism;army_of_mordor
+```
 
-For example: link https://t.me/end_of_world/10
-Channel name: end_of_world
-Message Id: 10
+Legend info:
+-   description: general information about inappropriate content
+-   channel name: telegram`s channel name
+
+# How to get information for message report:
+
+- Choose inappropriate message in the telegram channel and click on button `Copy Message Link`. 
+- Extract id of channel,message from url and add to the file
+- Place data into semi-csv file
+
+For example: 
+`Copy Message Link` returns following link https://t.me/end_of_world/10.
+Extracted values are: 
+- Channel name: end_of_world
+- Message Id: 10
+
+Sturcture of the file:
+```
+spam,Fake news;end_of_world;10
+```
+
+# How to get information for channel report:
+- Choose any inappropriate message in the telegram channel and click on button `Copy Message Link`.
+- Extract id of channel
+- Place data into semi-csv file
+
+For example:
+`Copy Message Link` returns following link https://t.me/end_of_world/10.
+Extracted values are:
+- Channel name: end_of_world
+
+Sturcture of the file:
+```
+Fake news;end_of_world
+```
+
+# How to submit report per telegram channel without marking any messages:
+
+- Find telegram channel with inappropriate content
+- Place telegram channel into semi-csv file 
+```
+custom;Fake news;end_of_world
+```
+
 
 # 1. Prerequisites
 

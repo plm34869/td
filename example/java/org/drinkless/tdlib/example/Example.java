@@ -62,7 +62,8 @@ public final class Example {
         "reportFake <text>/<chatName>/<messageId>/.../<messageId>,\n" +
         "reportChildAbuse <text>/<chatName>/<messageId>/.../<messageId>,\n" +
         "reportCustom <text>/<chatName>/<messageId>/.../<messageId>,\n" +
-        "report <full_path_to_resolved_file>,\n" +
+        "reportMessages <full_path_to_resolved_file>,\n" +
+        "reportChannels <full_path_to_resolved_file>,\n" +
         "resolveIds <full_path_to_file>,\n" +
         "gcs - GetChats,\n" +
         "gc <chatId> - GetChat,\n" +
@@ -291,10 +292,13 @@ public final class Example {
                     report(commands[1].split("/"), new TdApi.ChatReportReasonPornography());
                     break;
                 case "resolveIds":
-                    ReportResolver.resolveIds(Paths.get(commands[1]));
+                    ReportMessageResolver.resolveIds(Paths.get(commands[1]));
                     break;
-                case "report":
-                    ReportExecutor.execute(Paths.get(commands[1]));
+                case "reportMessages":
+                    ReportMessageExecutor.execute(Paths.get(commands[1]));
+                    break;
+                case "reportChannels":
+                    ReportChannelExecutor.execute(Paths.get(commands[1]));
                     break;
                 default:
                     System.err.println("Unsupported command: " + command);
@@ -697,22 +701,51 @@ public final class Example {
         }
 
         public static UnresolvedRecord from(String[] columns) {
-            return new UnresolvedRecord(columns[0], columns[1], columns[2], List.of(Arrays.copyOfRange(columns, 3, columns.length)));
+            return new UnresolvedRecord(
+                columns[0],
+                columns[1],
+                columns[2],
+                (columns.length == 3) ? Collections.emptyList() : List.of(Arrays.copyOfRange(columns, 3, columns.length))
+            );
         }
 
         @Override
         public String toString() {
             return reason +
-                "," +
+                ";" +
                 description +
-                "," +
+                ";" +
                 channelId +
-                "," +
-                String.join(",", messageIds);
+                ";" + String.join(";", messageIds);
         }
     }
 
-    public static class ReportResolver {
+    public static class UnresolvedChannelRecord {
+
+        public final String description;
+        public final String channelId;
+
+        private UnresolvedChannelRecord(String description, String channelId) {
+            this.description = description;
+            this.channelId = channelId;
+        }
+
+        public static UnresolvedChannelRecord from(String[] columns) {
+            return new UnresolvedChannelRecord(
+                columns[0],
+                columns[1]
+            );
+        }
+
+        @Override
+        public String toString() {
+            return description +
+                ";" +
+                channelId;
+        }
+    }
+
+    public static class ReportMessageResolver {
 
         public static void resolveIds(Path path) {
             try (
@@ -720,7 +753,7 @@ public final class Example {
                 BufferedWriter bw = Files.newBufferedWriter(path.getParent().resolve("resolved_" + path.getFileName()))) {
 
                 // CSV file delimiter
-                String DELIMITER = ",";
+                String DELIMITER = ";";
 
                 // read the file line by line
                 String line;
@@ -795,41 +828,67 @@ public final class Example {
         @Override
         public String toString() {
             return reason +
-                "," +
+                ";" +
                 description +
-                "," +
+                ";" +
                 channelId +
-                "," +
-                messageIds.stream().map(Object::toString).collect(Collectors.joining(","));
+                ";" +
+                messageIds.stream().map(Object::toString).collect(Collectors.joining(";"));
         }
     }
 
-    public static class ReportExecutor {
+    public static class ReportMessageExecutor {
 
         public static void execute(Path path) {
+            List<ResolvedRecord> records = readAllRecords(path);
+            CountDownLatch latch = new CountDownLatch(records.size());
+            print("\n\n[ACTION] Reporting message");
+            for (ResolvedRecord record : records) {
+                reportMessages(record, latch);
+            }
+            try {
+                latch.await();
+                print("\n\n[ACTION] End of Reporting message");
+            } catch (InterruptedException e) {
+                throw new IllegalStateException("[ERROR] Concurrent problem", e);
+            }
+        }
+
+        private static List<ResolvedRecord> readAllRecords(Path path) {
+            List<ResolvedRecord> records = new ArrayList<>();
             try (BufferedReader br = Files.newBufferedReader(path)) {
                 // CSV file delimiter
-                String DELIMITER = ",";
+                String DELIMITER = ";";
 
                 // read the file line by line
                 String line;
-                boolean isFirstLine = true;
                 while ((line = br.readLine()) != null) {
                     // convert line into columns
-                    ResolvedRecord resolvedRecord = ResolvedRecord.from(line.split(DELIMITER));
-                    System.out.println("Reporting: " + resolvedRecord.toString());
-                    client.send(
-                        new TdApi.ReportChat(
-                            resolvedRecord.channelId,
-                            resolvedRecord.messageIds.stream().mapToLong(Long::longValue).toArray(),
-                            toReason(resolvedRecord.reason),
-                            resolvedRecord.description
-                        ),
-                        defaultHandler);
+                    records.add(ResolvedRecord.from(line.split(DELIMITER)));
                 }
             } catch (IOException ex) {
                 ex.printStackTrace();
             }
+            return records;
+        }
+
+        private static void reportMessages(ResolvedRecord record, CountDownLatch latch) {
+            client.send(
+                new TdApi.ReportChat(
+                    record.channelId,
+                    record.messageIds.stream().mapToLong(Long::longValue).toArray(),
+                    toReason(record.reason),
+                    record.description
+                ),
+                reportingResult -> {
+                    print(reportingResult.toString());
+                    print("[REPORTED] " + record.toString());
+                    latch.countDown();
+                },
+                e -> {
+                    print("[ERROR] Fail to report " + record.toString());
+                    latch.countDown();
+                });
         }
 
         private static TdApi.ChatReportReason toReason(String reason) {
@@ -853,6 +912,69 @@ public final class Example {
                 default:
                     throw new IllegalStateException("Unsupported type");
             }
+        }
+    }
+
+    public static class ReportChannelExecutor {
+
+        public static void execute(Path path) {
+            List<UnresolvedChannelRecord> records = readAllRecords(path);
+            CountDownLatch latch = new CountDownLatch(records.size());
+            print("\n\n[ACTION] Reporting channels");
+            for (UnresolvedChannelRecord record : records) {
+                reportChannel(record, latch);
+            }
+            try {
+                latch.await();
+                print("[ACTION] End of Reporting channels\n\n");
+            } catch (InterruptedException e) {
+                throw new IllegalArgumentException("[ERROR] Concurrent problem", e);
+            }
+        }
+
+        private static List<UnresolvedChannelRecord> readAllRecords(Path path) {
+            List<UnresolvedChannelRecord> records = new ArrayList<>();
+            try (BufferedReader br = Files.newBufferedReader(path)) {
+                // CSV file delimiter
+                String DELIMITER = ";";
+
+                // read the file line by line
+                String line;
+                while ((line = br.readLine()) != null) {
+                    // convert line into columns
+                    records.add(UnresolvedChannelRecord.from(line.split(DELIMITER)));
+                }
+            } catch (IOException ex) {
+                ex.printStackTrace();
+            }
+            return records;
+        }
+
+        private static void reportChannel(UnresolvedChannelRecord record, CountDownLatch latch) {
+            client.send(new TdApi.SearchPublicChat(record.channelId),
+                data -> {
+                    TdApi.Chat chat = (TdApi.Chat) data;
+                    client.send(
+                        new TdApi.ReportChat(
+                            chat.id,
+                            new long[]{},
+                            new TdApi.ChatReportReasonCustom(),
+                            record.description
+                        ),
+                        reportingResult -> {
+                            print(reportingResult.toString());
+                            print("[REPORTED] " + record.toString());
+                            latch.countDown();
+                        },
+                        e -> {
+                            print("[ERROR] Failed to report " + record.toString());
+                            latch.countDown();
+                        });
+                },
+                e -> {
+                    print("[ERROR] Failed to report " + record.toString());
+                    latch.countDown();
+                });
         }
     }
 }
